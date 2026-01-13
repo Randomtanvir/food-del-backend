@@ -11,7 +11,7 @@ cloudinary.config({
 
 export const uploadImageInCloudinary = async (
   reqFile,
-  folderName = "AI-Assistant"
+  folderName = "food-img"
 ) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(

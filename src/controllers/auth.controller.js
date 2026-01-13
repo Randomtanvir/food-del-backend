@@ -1,10 +1,12 @@
 import User from "../models/user.model.js";
+
+import bcrypt from "bcryptjs";
 import generateToken from "../utils/generateTokens.js";
 
 export const register = async (req, res) => {
   try {
     const { fullName, email, password } = req.body;
-
+    console.log(fullName, email, password);
     if (!fullName || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
@@ -13,8 +15,8 @@ export const register = async (req, res) => {
     if (userExists) {
       return res.status(400).json({ message: "User already exists" });
     }
-
     const hashedPassword = await bcrypt.hash(password, 10);
+    console.log("TANVIR", hashedPassword);
 
     const user = await User.create({
       fullName,
@@ -101,5 +103,13 @@ export const logout = async (req, res) => {
       success: false,
       message: "Logout failed",
     });
+  }
+};
+export const getMe = async (req, res) => {
+  try {
+    const user = req.user; // protect middleware set করেছে
+    return res.json({ success: true, user });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };

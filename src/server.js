@@ -2,6 +2,8 @@ import express from "express";
 import dotenv from "dotenv";
 import authRouts from "./routes/auth.route.js";
 import foodRoute from "./routes/food.route.js";
+import cartRoute from "./routes/cart.route.js";
+import orderRoute from "./routes/order.route.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import { connectDB } from "./utils/db.js";
@@ -22,7 +24,9 @@ app.use(
 
 //routes
 app.use("/api/auth", authRouts);
-app.use("/api", foodRoute);
+app.use("/api/food", foodRoute);
+app.use("/api/cart", cartRoute);
+app.use("/api/order", orderRoute);
 // app.use("/api/messages", messageRoutes);
 
 app.listen(port, () => {
