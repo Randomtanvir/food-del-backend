@@ -1,39 +1,122 @@
 import Order from "../models/order.model.js";
 import User from "../models/user.model.js";
+import Stripe from "stripe";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const DELIVERY_FEE = 2;
 
 export const placeOrder = async (req, res) => {
   try {
     const userId = req.user._id;
 
+    const {
+      firstName,
+      lastName,
+      email,
+      street,
+      city,
+      state,
+      zipCode,
+      country,
+      phone,
+    } = req.body;
+
     const user = await User.findById(userId).populate("cart.food");
+
     if (!user || user.cart.length === 0) {
       return res.status(400).json({ message: "Cart is empty" });
     }
 
-    // Calculate total price
-    let totalPrice = 0;
+    // ---- Calculate price ----
+    let subtotal = 0;
+
     const items = user.cart.map((item) => {
-      totalPrice += item.food.price * item.quantity;
+      subtotal += item.food.price * item.quantity;
+
       return {
         food: item.food._id,
         quantity: item.quantity,
       };
     });
 
+    const totalPrice = subtotal + DELIVERY_FEE;
+
+    // ---- Create order (pending) ----
     const order = await Order.create({
       user: userId,
       items,
+
+      deliveryInfo: {
+        firstName,
+        lastName,
+        email,
+        street,
+        city,
+        state,
+        zipCode,
+        country,
+        phone,
+      },
+
+      subtotal,
+      deliveryFee: DELIVERY_FEE,
       totalPrice,
+
+      paymentStatus: "paid",
     });
 
-    // Clear user cart
-    user.cart = [];
-    await user.save();
+    // ---- Stripe line items ----
+    const line_items = user.cart.map((item) => ({
+      price_data: {
+        currency: "usd",
+        product_data: {
+          name: item.food.name,
+        },
+        unit_amount: Math.round(item.food.price * 100),
+      },
+      quantity: item.quantity,
+    }));
 
-    res.status(201).json({
+    // delivery fee line
+    line_items.push({
+      price_data: {
+        currency: "usd",
+        product_data: {
+          name: "Delivery Fee",
+        },
+        unit_amount: DELIVERY_FEE * 100,
+      },
+      quantity: 1,
+    });
+
+    // ---- Create Stripe Session ----
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+
+      line_items,
+
+      mode: "payment",
+
+      success_url: `${process.env.FRONTEND_URL}/payment-success?orderId=${order._id}`,
+      cancel_url: `${process.env.FRONTEND_URL}/cart`,
+
+      metadata: {
+        orderId: order._id.toString(),
+        userId: userId.toString(),
+      },
+    });
+
+    // save session id
+    order.stripeSessionId = session.id;
+    await order.save();
+
+    await User.findByIdAndUpdate(userId, {
+      cart: [],
+    });
+
+    res.json({
       success: true,
-      message: "Order placed successfully",
-      order,
+      sessionUrl: session.url,
     });
   } catch (error) {
     console.error("PLACE ORDER ERROR:", error);
@@ -112,5 +195,75 @@ export const updateOrderStatus = async (req, res) => {
       success: false,
       message: "Failed to update order status",
     });
+  }
+};
+
+export const placeOrderCOD = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const {
+      firstName,
+      lastName,
+      email,
+      street,
+      city,
+      state,
+      zipCode,
+      country,
+      phone,
+    } = req.body;
+
+    // find user and populate cart
+    const user = await User.findById(userId).populate("cart.food");
+    if (!user || user.cart.length === 0) {
+      return res.status(400).json({ message: "Cart is empty" });
+    }
+
+    // Calculate subtotal
+    let subtotal = 0;
+    const items = user.cart.map((item) => {
+      subtotal += item.food.price * item.quantity;
+      return {
+        food: item.food._id,
+        quantity: item.quantity,
+      };
+    });
+
+    const totalPrice = subtotal + DELIVERY_FEE;
+
+    // create order
+    const order = await Order.create({
+      user: userId,
+      items,
+      deliveryInfo: {
+        firstName,
+        lastName,
+        email,
+        street,
+        city,
+        state,
+        zipCode,
+        country,
+        phone,
+      },
+      subtotal,
+      deliveryFee: DELIVERY_FEE,
+      totalPrice,
+      paymentStatus: "cod", // Cash on Delivery
+    });
+
+    // clear user cart
+    user.cart = [];
+    await user.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Order placed successfully (Cash on Delivery)",
+      order,
+    });
+  } catch (error) {
+    console.error("COD ORDER ERROR:", error);
+    res.status(500).json({ message: "Failed to place order" });
   }
 };
